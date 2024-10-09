@@ -1,0 +1,137 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+class TwoLayerPlate:
+    def __init__(self, N1, N2, L, T0, Tl, Tr, lambda1, ro1, c1, lambda2, ro2, c2):
+        """
+        Инициализация параметров для двухслойной пластины.
+
+        :param N1: Количество узлов в первой части пластины (сталь)
+        :param N2: Количество узлов во второй части пластины (медь)
+        :param L: Длина пластины (м)
+        :param T0: Начальная температура (°C)
+        :param Tl: Температура на левой границе (°C)
+        :param Tr: Температура на правой границе (°C)
+        :param lambda1: Теплопроводность первой части (Вт/м°C)
+        :param ro1: Плотность первой части (кг/м³)
+        :param c1: Теплоемкость первой части (Дж/кг°C)
+        :param lambda2: Теплопроводность второй части (Вт/м°C)
+        :param ro2: Плотность второй части (кг/м³)
+        :param c2: Теплоемкость второй части (Дж/кг°C)
+        """
+        self.N1 = N1
+        self.N2 = N2
+        self.N = N1 + N2 + 1  # Общее количество узлов
+        self.L = L
+        self.T0 = T0
+        self.Tl = Tl
+        self.Tr = Tr
+        self.lambda1 = lambda1
+        self.ro1 = ro1
+        self.c1 = c1
+        self.lambda2 = lambda2
+        self.ro2 = ro2
+        self.c2 = c2
+
+        # Шаг по пространству
+        self.h = L / (self.N - 1)
+
+        # Коэффициенты температуропроводности для стали и меди
+        self.a1 = self.lambda1 / (self.ro1 * self.c1)
+        self.a2 = self.lambda2 / (self.ro2 * self.c2)
+
+        # Инициализация температурного поля
+        self.T = np.full(self.N, self.T0)
+        self.T[0] = self.Tl  # Левая граница
+        self.T[-1] = self.Tr  # Правая граница
+
+    def solve(self, t_end):
+        """Решение задачи теплопроводности методом прогонки."""
+        tau = t_end / 100.0  # Шаг по времени
+        time = 0
+
+        while time < t_end:
+            time += tau
+
+            # Коэффициенты прогонки для первой части (сталь)
+            alfa = np.zeros(self.N)
+            beta = np.zeros(self.N)
+
+            alfa[1] = 0.0
+            beta[1] = self.Tl
+
+            # Прогонка для стали
+            for i in range(2, self.N1 + 1):
+                ai = self.lambda1 / self.h**2
+                bi = 2.0 * self.lambda1 / self.h**2 + self.ro1 * self.c1 / tau
+                ci = self.lambda1 / self.h**2
+                fi = -self.ro1 * self.c1 * self.T[i] / tau
+
+                alfa[i] = ai / (bi - ci * alfa[i - 1])
+                beta[i] = (ci * beta[i - 1] - fi) / (bi - ci * alfa[i - 1])
+
+            # Прогонка на границе раздела
+            alfa[self.N1 + 1] = 2.0 * self.a1 * self.a2 * tau * self.lambda2 / (
+                2.0 * self.a1 * self.a2 * tau * (self.lambda2 + self.lambda1 * (1 - alfa[self.N1]))
+                + self.h**2 * (self.a1 * self.lambda2 + self.a2 * self.lambda1))
+            beta[self.N1 + 1] = (2.0 * self.a1 * self.a2 * tau * self.lambda1 * beta[self.N1]
+                                 + self.h**2 * (self.a1 * self.lambda2 + self.a2 * self.lambda1) * self.T[self.N1 + 1]) / (
+                                    2.0 * self.a1 * self.a2 * tau * (self.lambda2 + self.lambda1 * (1 - alfa[self.N1]))
+                                    + self.h**2 * (self.a1 * self.lambda2 + self.a2 * self.lambda1))
+
+            # Прогонка для меди
+            for i in range(self.N1 + 2, self.N - 1):
+                ai = self.lambda2 / self.h**2
+                bi = 2.0 * self.lambda2 / self.h**2 + self.ro2 * self.c2 / tau
+                ci = self.lambda2 / self.h**2
+                fi = -self.ro2 * self.c2 * self.T[i] / tau
+
+                alfa[i] = ai / (bi - ci * alfa[i - 1])
+                beta[i] = (ci * beta[i - 1] - fi) / (bi - ci * alfa[i - 1])
+
+            # Установка правой границы
+            self.T[-1] = self.Tr
+
+            # Обратная прогонка
+            for i in range(self.N - 2, 0, -1):
+                self.T[i] = alfa[i] * self.T[i + 1] + beta[i]
+
+    def plot(self, times):
+        """Построение графиков распределения температуры."""
+        x = np.linspace(0, self.L, self.N)
+
+        plt.figure()
+        for t in times:
+            self.solve(t)  # Решаем для текущего времени
+            plt.plot(x, self.T, label=f't = {t} сек')
+
+        plt.xlabel('Длина пластины (м)')
+        plt.ylabel('Температура (°C)')
+        plt.title('Температурное поле в двухслойной пластине (Сталь и Медь)')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+# Пример использования
+if __name__ == "__main__":
+    # Параметры задачи
+    N1 = 50  # Количество узлов в первой части (сталь)
+    N2 = 50  # Количество узлов во второй части (медь)
+    L = 0.3 # Длина пластины (м)
+    K = 273
+    T0 = 10 + K  # Начальная температура (°C)
+    Tl = 100 + K  # Температура на левой границе (°C)
+    Tr = 50  + K # Температура на правой границе (°C)
+    lambda1 = 46  # Теплопроводность стали (Вт/м°C)
+    ro1 = 7800  # Плотность стали (кг/м³)
+    c1 = 460  # Теплоемкость стали (Дж/кг°C)
+    lambda2 = 384  # Теплопроводность меди (Вт/м°C)
+    ro2 = 8800  # Плотность меди (кг/м³)
+    c2 = 381  # Теплоемкость меди (Дж/кг°C)
+
+    # Время моделирования для каждого случая
+    times = [30, 180, 600]
+
+    # Создание экземпляра класса и решение задачи
+    plate = TwoLayerPlate(N1, N2, L, T0, Tl, Tr, lambda1, ro1, c1, lambda2, ro2, c2)
+    plate.plot(times)
