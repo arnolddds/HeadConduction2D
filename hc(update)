@@ -1,0 +1,121 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+class TwoLayerPlate:
+    def __init__(self, N1, N2, t_end, L, lambda1, lambda2, ro1, ro2, c1, c2, T0, Tl, Tr):
+        """
+        Инициализация параметров задачи для двухслойной пластины (неявная схема).
+
+        :param N1: Количество узлов в первой части пластины
+        :param N2: Количество узлов во второй части пластины
+        :param t_end: Время моделирования (сек)
+        :param L: Длина пластины (м)
+        :param lambda1: Коэффициент теплопроводности первого слоя (Вт/м°C)
+        :param lambda2: Коэффициент теплопроводности второго слоя (Вт/м°C)
+        :param ro1: Плотность первого слоя (кг/м³)
+        :param ro2: Плотность второго слоя (кг/м³)
+        :param c1: Теплоемкость первого слоя (Дж/кг°C)
+        :param c2: Теплоемкость второго слоя (Дж/кг°C)
+        :param T0: Начальная температура пластины (°C)
+        :param Tl: Температура на левом конце пластины (°C)
+        :param Tr: Температура на правом конце пластины (°C)
+        """
+        self.N1 = N1
+        self.N2 = N2
+        self.N = N1 + N2  # Общее количество узлов
+        self.t_end = t_end
+        self.L = L
+        self.lambda1 = lambda1
+        self.lambda2 = lambda2
+        self.ro1 = ro1
+        self.ro2 = ro2
+        self.c1 = c1
+        self.c2 = c2
+        self.T0 = T0
+        self.Tl = Tl
+        self.Tr = Tr
+
+        # Шаг по пространству для всей пластины
+        self.h = self.L / (self.N)
+
+        # Коэффициенты температуропроводности для первого и второго слоев
+        self.a1 = self.lambda1 / (self.ro1 * self.c1)
+        self.a2 = self.lambda2 / (self.ro2 * self.c2)
+
+        # Шаг по времени с учетом критерия устойчивости
+        self.tau = min(self.h ** 2 / (2 * max(self.a1, self.a2)), self.t_end / 100.0)
+
+        # Инициализация температурного поля
+        self.T = np.full(self.N, self.T0)
+        self.T[0] = self.Tl
+        self.T[-1] = self.Tr
+
+        # История температур для анализа
+        self.T_history = []
+
+    def solve(self):
+        """Решение задачи теплопроводности для двухслойной пластины с использованием неявной схемы."""
+        for step in range(int(self.t_end / self.tau)):
+            T_new = self.T.copy()
+
+            for i in range(1, self.N - 1):
+                if i < self.N1:  # Первый слой
+                    lambdai_plus_half = self.lambda1
+                    lambdai_minus_half = self.lambda1
+                    ro_c = self.ro1 * self.c1
+                elif i == self.N1:  # Граница между слоями
+                    lambdai_plus_half = 2 * self.lambda1 * self.lambda2 / (self.lambda1 + self.lambda2)
+                    lambdai_minus_half = self.lambda1
+                    ro_c = (self.ro1 * self.c1 + self.ro2 * self.c2) / 2
+                else:  # Второй слой
+                    lambdai_plus_half = self.lambda2
+                    lambdai_minus_half = self.lambda2
+                    ro_c = self.ro2 * self.c2
+
+                # Обновление температуры
+                T_new[i] = (
+                        self.T[i] +
+                        self.tau / (ro_c * self.h ** 2) * (
+                                lambdai_plus_half * (self.T[i + 1] - self.T[i]) -
+                                lambdai_minus_half * (self.T[i] - self.T[i - 1])
+                        )
+                )
+
+            self.T = T_new
+            self.T_history.append(self.T.copy())
+
+    def plot(self):
+        """Построение графика распределения температуры."""
+        x = np.linspace(0, self.L, self.N)
+        plt.plot(x, self.T, label=f't = {self.t_end:.2f} сек')
+        plt.xlabel('Длина пластины (м)')
+        plt.ylabel('Температура (°C)')
+        plt.title('Распределение температуры по двум слоям пластины')
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+
+
+# Пример использования
+if __name__ == "__main__":
+    # Параметры задачи
+    N1 = 50  # Количество узлов в первой части пластины
+    N2 = 50  # Количество узлов во второй части пластины
+    t_end = 800  # Время моделирования (сек)
+    L = 0.4  # Общая длина пластины (м)
+    lambda1 = 46.0  # Коэффициент теплопроводности первой части пластины (Вт/м°C)
+    lambda2 = 384.0  # Коэффициент теплопроводности второй части пластины (Вт/м°C)
+    ro1 = 7800.0  # Плотность первой части пластины (кг/м³)
+    ro2 = 8800.0  # Плотность второй части пластины (кг/м³)
+    c1 = 460.0  # Теплоемкость первой части пластины (Дж/кг°C)
+    c2 = 381.0  # 381  # Теплоемкость второй части пластины (Дж/кг°C)
+    K = 273.0
+    T0 = 10 + K  # Начальная температура (°C)
+    Tl = 100 + K  # Температура на левом конце пластины (°C)
+    Tr = 50 + K  # Температура на правом конце пластины (°C)
+
+    # Создание экземпляра класса и решение задачи
+    two_layer_plate = TwoLayerPlate(N1, N2, t_end, L, lambda1, lambda2, ro1, ro2, c1, c2, T0, Tl, Tr)
+    two_layer_plate.solve()
+    two_layer_plate.plot()
